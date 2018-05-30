@@ -9,8 +9,8 @@ theme-override : assets/css/PITCHME.css
 # theme-override : assets/css/PITCHME.codemax.css
 highlight : ir-black
 logo : assets/logo.png
-background : assets/binary-strings-black.jpg
-background-opacity : 15
+#background : assets/binary-strings-black.jpg
+#background-opacity : 15
 transition : none
 published : true
-footnote : "GitPitch [ Black Binary ] Presentation Template"
+footnote : "GPU Programming 101 @ FMI"
