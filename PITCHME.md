@@ -124,7 +124,7 @@ Each API has two parts:
 ## GPGPU APIs
 Each API has the notion of a host & some devices.
 
-![](assets/host_devices.png)
+![](assets/host_devices.PNG)
 
 ---
 ## Simple workflow example: Sum
@@ -141,7 +141,7 @@ sum(a, b, res, count);
 ## Simple workflow example: Sum
 ```c
 __global__ void sum(float* a, float* b, float* res, int count) {
-    int i = get_global_id();
+    int i = globalThreadIdx();
     if (i > count) return;
     res[i] = a[i] + b[i];
 }
@@ -223,10 +223,10 @@ The catch: each operation has much higher latency on the GPU than the CPU, espec
 So, block execution is interleaved in order to **hide the latency with multithreading.**
 
 ---
-![](assets/g5.png)
+![](assets/g5.PNG)
 
 ---
-![](assets/g6.png)
+![](assets/g6.PNG)
 
 ---
 ## Device Thread Model
@@ -239,13 +239,13 @@ So, block execution is interleaved in order to **hide the latency with multithre
 - as in CPU, ILP is an alternative to higher occupancy
 
 ---
-![](assets/g2.png)
+![](assets/g2.PNG)
 
 ---
-![](assets/g3.png)
+![](assets/g3.PNG)
 
 ---
-![](assets/g4.png)
+![](assets/g4.PNG)
 ## Divergence
 What will happen on execution of the following:
 ```c
@@ -261,7 +261,7 @@ __global__ void squareEvenOdd(int* a, int count) {
 ```
 
 ---
-![](assets/g8.png)
+![](assets/g8.PNG)
 
 ---
 ![](assets/divergence1.png)
@@ -294,7 +294,7 @@ __global__ void squareEvenOdd(int* a, int count) {
 Device(s) and host have physically separate memory.
 We have to copy it back and forth (think memcpy).
 
-![](assets/mem.png)
+![](assets/mem.PNG)
 
 ---
 ## Memory Model
@@ -314,7 +314,7 @@ We have to copy it back and forth (think memcpy).
 - Other: caches, "local", broadcast
 
 ---
-![](assets/mem0.png)
+![](assets/mem0.PNG)
 
 ---
 ![](assets/memory-hierarchy.png)
@@ -375,10 +375,10 @@ __constant__ int c[42];
 - otherwise, slow (although being cached)
 
 ---
-![](assets/mem_comp.png)
+![](assets/mem_comp.PNG)
 
 ---
-![](assets/mem_sizes.png)
+![](assets/mem_sizes.PNG)
 
 ---
 ## Registers, cont.
@@ -431,12 +431,12 @@ __global__ void offsetCopy(float* A, float* B, int offset)
   A[i] = B[i];
 }
 ```
-![](assets/misalign.png)
+![](assets/misalign.PNG)
 
 ---
 ## Misaligned memory access pattern:
 
-![](assets/misalign1.png)
+![](assets/misalign1.PNG)
 
 ---
 ## Strided memory access pattern:
@@ -447,11 +447,11 @@ __global__ void strideCopy(float* A, float* B, int stride)
   A[i] = B[i];
 }
 ```
-![](assets/stride.png)
+![](assets/stride.PNG)
 
 ---
 ## Strided memory access pattern:
-![](assets/stride1.png)
+![](assets/stride1.PNG)
 
 --- 
 ## Some more considerations:
@@ -555,16 +555,18 @@ int main() {
   float* B = ...;
   float* dev_A = nullptr; // pointer to device memory
   float* dev_B = nullptr; // pointer to device memory
-  // transfer to device
+  // allocate memory on the device - this returns addresses in device memory space
   cudaMalloc((void**)&dev_A, n*sizeof(float));
-  cudaMemcpy(devPtrA, A, n*sizeof(float), cudaMemcpyHostToDevice);
   cudaMalloc((void**)&dev_B, n*sizeof(float));
+  // transfer to device
+  cudaMemcpy(devPtrA, A, n*sizeof(float), cudaMemcpyHostToDevice);
   cudaMemCpy(devPtrB, B, m*sizeof(float), cudaMemcpyHostToDevice);
   // call kernel
   f<<<...>>>(dev_A, dev_B, n); // device needs the device addresses
   cudaDeviceSynchronize();
   // transfer back to host
   cudaMemCpy(B, dev_B, n*sizeof(float), cudaMemcpyDeviceToHost);
+  // free device memory
   cudaFree(dev_A);
   cudaFree(dev_B);
 }
@@ -585,7 +587,7 @@ for (int i = 1; i < n; ++i) {
 ## Problem #0: AdjDiff
 ```c
 __global__ void adjDiff0(int* result, int* input, int n) {
-    const int i = getGlobalID();
+    const int i = globalThreadIdx();
     
     if (i > 0 && i < n) {
         int curr = input[i];
@@ -601,7 +603,7 @@ __global__ void adjDiff0(int* result, int* input, int n) {
 ```c
 #define BLOCK_SIZE 512
 __global__ void adjDiff1(int* result, int* input, int n) {
-    const int i = getGlobalID();
+    const int i = globalThreadIdx();
     if (i >= n)
       return;
     
@@ -622,7 +624,7 @@ __global__ void adjDiff1(int* result, int* input, int n) {
 ## Problem #1: Array sum
 ```c
 __global__ void sum0(int* a, int count, int* result) {
-    const int i = getGlobalID();
+    const int i = globalThreadIdx();
     
     if (i > count)
         return;
@@ -635,7 +637,7 @@ __global__ void sum0(int* a, int count, int* result) {
 ## Problem #1: Array sum
 ``` c
 __global__ void sum1(int* a, int count, int* result) {
-    const int i = getGlobalID();
+    const int i = globalThreadIdx();
     __shared__ int partialSum;
     
     if (i > count)
@@ -657,7 +659,7 @@ __global__ void sum1(int* a, int count, int* result) {
 ## Problem #1: Array sum
 ```c
 __global__ void blockSum(int* input, int* results, int n) {
-    const int i = getGlobalID();
+    const int i = globalThreadIdx();
     if (i >= n)
         return;
     
