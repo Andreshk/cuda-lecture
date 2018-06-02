@@ -463,7 +463,7 @@ __global__ void strideCopy(float* A, float* B, int stride)
 - sometimes re-calculating is better than caching
 
 ---
-# CUDA C
+# CUDA C(++)
 
 >Within C++, there is a much smaller and cleaner language struggling to get out. - Bjarne Stroustrup
 
@@ -486,14 +486,14 @@ __global__ void strideCopy(float* A, float* B, int stride)
 - all simple structures:
 ```c
 struct float4 { float x,y,z,w; };
-int2 make_int2(int x, int y); // "constructor", one for all types
+int2 make_int2(int x, int y); // "constructor", all types have one
 ```
 
 ---
 ## Built-in vector types
 ```c
 dim3 dimBlock(width, height);
-dim3 dimGrid(10); // same as (10,0,0)
+dim3 dimGrid(10); // same as (10,1,1)
 f<<<dimGrid,dimBlock>>>(...);
 f<<<10,512>>>(...);
 // ...
@@ -534,7 +534,7 @@ __host__ float hostFunc() {
 - can't take an address of a `__device__` function
 - `__host__` and `__device__` can be used together, the others not
 - `__global__` function must have void return type
-- execution configuration for `__global__`s must be specified, and the call is asynchronous]
+- execution configuration for `__global__`s must be specified, and the call is asynchronous
 
 ---
 ## Memory management functions:
@@ -575,7 +575,7 @@ int main() {
 ```c++
 int* input = ...;
 int* result = ...;
-for (int i = 0; i < n; ++i) {
+for (int i = 1; i < n; ++i) {
   result[i] = input[i] - input[i-1];
 }
 ```
@@ -584,7 +584,7 @@ for (int i = 0; i < n; ++i) {
 ---
 ## Problem #0: AdjDiff
 ```c
-kernel void adjDiff0(int* result, int* input, int n) {
+__global__ void adjDiff0(int* result, int* input, int n) {
     const int i = getGlobalID();
     
     if (i > 0 && i < n) {
@@ -600,7 +600,7 @@ kernel void adjDiff0(int* result, int* input, int n) {
 ## Problem #0: AdjDiff
 ```c
 #define BLOCK_SIZE 512
-kernel void adjDiff1(int* result, int* input, int n) {
+__global__ void adjDiff1(int* result, int* input, int n) {
     const int i = getGlobalID();
     if (i >= n)
       return;
@@ -611,9 +611,9 @@ kernel void adjDiff1(int* result, int* input, int n) {
     
     __syncthreads();
     
-    if (tx > 1)
+    if (tx >= 1)
         result[i] = sharedData[tx] - sharedData[tx - 1];
-    else if (i > 1) {
+    else if (i >= 1) {
         result[i] = sharedData[tx] - input[i - 1];
     }
 }
@@ -621,9 +621,8 @@ kernel void adjDiff1(int* result, int* input, int n) {
 ---
 ## Problem #1: Array sum
 ```c
-kernel void sum0(int* a, int* countPtr, int* result) {
+__global__ void sum0(int* a, int count, int* result) {
     const int i = getGlobalID();
-    const int count = *countPtr;
     
     if (i > count)
         return;
@@ -635,11 +634,9 @@ kernel void sum0(int* a, int* countPtr, int* result) {
 ---
 ## Problem #1: Array sum
 ``` c
-kernel void sum1(int* a, int* countPtr, int* result) {
-    shared int partialSum;
-    
+__global__ void sum1(int* a, int count, int* result) {
     const int i = getGlobalID();
-    const int count = *countPtr;
+    __shared__ int partialSum;
     
     if (i > count)
         return;
@@ -647,9 +644,10 @@ kernel void sum1(int* a, int* countPtr, int* result) {
     if (threadIdx.x == 0)
         partialSum = 0;
     
-    syncThreads();
+    __syncthreads();
     atomicAdd(&partialSum, a[i]);
-
+    __syncthreads();
+    
     if (threadIdx.x == 0)
         atomicAdd(result, partialSum);
 }
@@ -658,16 +656,15 @@ kernel void sum1(int* a, int* countPtr, int* result) {
 ---
 ## Problem #1: Array sum
 ```c
-kernel void blockSum(int* input, int* results, int n) {
+__global__ void blockSum(int* input, int* results, int n) {
     const int i = getGlobalID();
     if (i >= n)
         return;
     
-    shared int sharedData[BLOCK_SIZE];
+    __shared__ int sharedData[BLOCK_SIZE];
     const int tx = threadIdx.x;
-    int x = input[i];
-    sharedData[tx] = x;
-    syncThreads();
+    sharedData[tx] = input[i];
+    __syncthreads();
     
     
     for (int offset = blockDim.x / 2;
@@ -689,10 +686,9 @@ kernel void blockSum(int* input, int* results, int n) {
 ---
 ## Problem #2: Matrix multiplication
 ```c
-kernel void matMul0(float* a, float* b, float* ab, int* widthPtr) {
+__global__ void matMul0(float* a, float* b, float* ab, int width) {
     int row = blockIdx.y * blockDim.y + threadIdx.y;
     int column = blockIdx.x * blockDim.x + threadIdx.x;
-    const int width = *widthPtr;
     float res = 0;
     
     for (int k = 0; k < width; ++k)
@@ -707,38 +703,33 @@ kernel void matMul0(float* a, float* b, float* ab, int* widthPtr) {
 ```c
 #define TILE_WIDTH 8
 
-__global__ void matMul1(float* a, float* b, float* ab, int* widthPtr) {
+__global__ void matMul1(float* a, float* b, float* ab, int width) {
     const int tx = threadIdx.x, ty = threadIdx.y;
     const int bx = blockIdx.x, by = blockIdx.y;
 
-    shared float sA[TILE_WIDTH][TILE_WIDTH];
-    shared float sB[TILE_WIDTH][TILE_WIDTH];
+    __shared__ float sA[TILE_WIDTH][TILE_WIDTH];
+    __shared__ float sB[TILE_WIDTH][TILE_WIDTH];
     
     int row = by * blockDim.y + ty;
     int col = bx * blockDim.x + tx;
     
     float res = 0;
-    
-    const int width = *widthPtr;
   
     for (int p = 0; p < width/TILE_WIDTH; ++p) {
         sA[ty][tx] = a[row*width + (p*TILE_WIDTH + tx)];
         sB[ty][tx] = b[(p*TILE_WIDTH + ty)*width + col];
         
-        syncThreads();
+        __syncthreads();
         
         for (int k = 0; k < TILE_WIDTH; ++k)
             res += sA[ty][k] * sB[k][tx];
         
-        syncThreads();
+        __syncthreads();
     }
     
     ab[row*width + col] = res;
 }
 ```
-
----
-![]()
 
 ---
 # End.
