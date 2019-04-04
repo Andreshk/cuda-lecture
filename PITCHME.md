@@ -247,6 +247,8 @@ So, block execution is interleaved in order to **hide the latency with multithre
 ---
 ![](assets/g4.PNG)
 ## Divergence
+
+---
 What will happen on execution of the following:
 ```c
 __global__ void squareEvenOdd(int* a, int count) {
