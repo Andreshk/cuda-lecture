@@ -657,18 +657,10 @@ __global__ void sum0(int* a, int count, int* result) {
 ``` c
 __global__ void sum1(int* a, int count, int* result) {
     const int i = globalThreadIdx();
+    if (i > count) return;
+    
     __shared__ int partialSum;
-    
-    if (i > count)
-        return;
-    
-    if (threadIdx.x == 0)
-        partialSum = 0;
-```
-
----
-## Example usage:
-```c    
+    if (threadIdx.x == 0) partialSum = 0;  
     __syncthreads();
     atomicAdd(&partialSum, a[i]);
     __syncthreads();
@@ -709,7 +701,6 @@ __global__ void blockSum(int* input, int* results, int n) {
 ```
 - sum for a single block
 - we can call the kernel again on the results array
-- or use atomic add for the result (if block count is small)
 
 ---
 ## Problem #2: Matrix multiplication
