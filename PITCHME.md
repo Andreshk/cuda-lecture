@@ -279,13 +279,21 @@ __global__ void squareEvenOdd(int* a, int count) {
 
 ---
 ## Difference between the CPU and the GPU thread models 
+@ul
+- CPU: Threads are expensive, no sense to have more threads than cores
+- GPU: Threads are cheap, make millions
+- CPU: Context switch is expensive
+- GPU: Cheap, happens every couple of cycles
+@ulend
 
-| CPU        | GPU           |
-| ------------- |:-------------:| 
-| Threads are expensive, no sense to have more threads than cores | Threads are cheap, make millions | 
-| Context switch is expensive     | Cheap, happens every couple of cycles| 
-| Branch can be expensive, but most of the time is cheap | Most often, branches are really expensive  | 
-| Writing a lot code does not hurt the performance | Writing a lot code **might** hurt the performance |
+---
+## Difference between the CPU and the GPU thread models 
+@ul
+- CPU: Branch can be expensive, but most of the time is cheap
+- GPU: Most often, branches are really expensive
+- CPU: Writing a lot code does not hurt the performance
+- GPU: Writing a lot code **might** hurt the performance
+@ulend
 
 ---
 # Memory Model
