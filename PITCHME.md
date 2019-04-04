@@ -282,14 +282,14 @@ __global__ void squareEvenOdd(int* a, int count) {
 @ul
 - CPU: Threads are expensive, no sense to have more threads than cores
 - GPU: Threads are cheap, make millions
-- CPU: Context switch is expensive
+- CPU: Context switching is expensive
 - GPU: Cheap, happens every couple of cycles
 @ulend
 
 ---
 ## Difference between the CPU and the GPU thread models 
 @ul
-- CPU: Branch can be expensive, but most of the time is cheap
+- CPU: Branches can be expensive, but most of the time are cheap
 - GPU: Most often, branches are really expensive
 - CPU: Writing a lot code does not hurt the performance
 - GPU: Writing a lot code **might** hurt the performance
@@ -348,6 +348,10 @@ void baz(float fizzBuzz) { // <-
 - they run out when `threads/block * registers/thread` becomes too large
 - on every function call, registers are "preallocated"
 - if we have multiple branches, the maximum is preallocated
+
+---
+## Registers
+
 - when the registers get full, they "spill" in global memory
   - more specifically, a part of it, called `local` memory
   - in OpenCL, `local` memory means something else => confusion ensues
@@ -363,7 +367,7 @@ __shared__ int arr[42];
 - a block of threads have the same view
 - different blocks have different views
 - the root of most optimizations is using shared memory better
-- idea - manually cache what you need and use it instead of global memory
+- idea - manually cache what you might need more than once and use it instead of global memory
 
 ---
 ## Global memory
@@ -418,7 +422,7 @@ __global__ void good_kernel(float* arr) {
 }
 ```
 - even better when all warp accesses fit into the same cache line
-- the cache line is 128B = 32 * sizeof(float)
+- the cache line is 128B = `32 * sizeof(float)` = `32 * sizeof(int)`
 - remember the GPU being optimized for single-precision calculations?
 
 ---
@@ -552,6 +556,9 @@ __host__ float hostFunc() {
 - `cudaMallocPitch()` - allows for "row" padding
 - `cudaFree()`
 - `cudaMemset()`
+
+---
+## Memory management functions:
 - `cudaMemcpy()` - for two-way transfers
 - `cudaMemcpyToSymbol()` - used to set `__constant__` variables
 - all of those are synchronous & wait for the currently executing kernels to complete
@@ -566,11 +573,16 @@ int main() {
   float* dev_A = nullptr; // pointer to device memory
   float* dev_B = nullptr; // pointer to device memory
   // allocate memory on the device - this returns addresses in device memory space
-  cudaMalloc((void**)&dev_A, n*sizeof(float));
-  cudaMalloc((void**)&dev_B, n*sizeof(float));
+  cudaMalloc(&dev_A, n*sizeof(float));
+  cudaMalloc(&dev_B, n*sizeof(float));
   // transfer to device
   cudaMemcpy(devPtrA, A, n*sizeof(float), cudaMemcpyHostToDevice);
   cudaMemCpy(devPtrB, B, m*sizeof(float), cudaMemcpyHostToDevice);
+```
+
+---
+## Example usage:
+```c
   // call kernel
   f<<<...>>>(dev_A, dev_B, n); // device needs the device addresses
   cudaDeviceSynchronize();
@@ -614,18 +626,16 @@ __global__ void adjDiff0(int* result, int* input, int n) {
 #define BLOCK_SIZE 512
 __global__ void adjDiff1(int* result, int* input, int n) {
     const int i = globalThreadIdx();
-    if (i >= n)
-      return;
+    if (i >= n) return;
     
     __shared__ int sharedData[BLOCK_SIZE]; //compile-time vs run-time
     const int tx = threadIdx.x;
     sharedData[tx] = input[i]; // this is done in parallel
-    
     __syncthreads();
     
-    if (tx >= 1)
+    if (tx >= 1) {
         result[i] = sharedData[tx] - sharedData[tx - 1];
-    else if (i >= 1) {
+    } else if (i >= 1) {
         result[i] = sharedData[tx] - input[i - 1];
     }
 }
@@ -635,7 +645,6 @@ __global__ void adjDiff1(int* result, int* input, int n) {
 ```c
 __global__ void sum0(int* a, int count, int* result) {
     const int i = globalThreadIdx();
-    
     if (i > count)
         return;
 
@@ -655,7 +664,11 @@ __global__ void sum1(int* a, int count, int* result) {
     
     if (threadIdx.x == 0)
         partialSum = 0;
-    
+```
+
+---
+## Example usage:
+```c    
     __syncthreads();
     atomicAdd(&partialSum, a[i]);
     __syncthreads();
@@ -677,23 +690,26 @@ __global__ void blockSum(int* input, int* results, int n) {
     const int tx = threadIdx.x;
     sharedData[tx] = input[i];
     __syncthreads();
-    
-    
+```
+
+---
+## Example usage:
+```c
     for (int offset = blockDim.x / 2;
          offset > 0;
-         offset >>= 1)
+         offset /= 2)
     {
         if (tx < offset)
             sharedData[tx] += sharedData[tx + offset];
         __syncthreads(); // careful with __syncthreads() in branches
     }
-    if (tx == 0) {
+    if (tx == 0)
         results[blockIdx.x] = sharedData[0];
-    }
 }
 ```
 - sum for a single block
 - we can call the kernel again on the results array
+- or use atomic add for the result (if block count is small)
 
 ---
 ## Problem #2: Matrix multiplication
@@ -726,16 +742,18 @@ __global__ void matMul1(float* a, float* b, float* ab, int width) {
     int col = bx * blockDim.x + tx;
     
     float res = 0;
-  
+```
+
+---
+## Example usage:
+```c  
     for (int p = 0; p < width/TILE_WIDTH; ++p) {
         sA[ty][tx] = a[row*width + (p*TILE_WIDTH + tx)];
         sB[ty][tx] = b[(p*TILE_WIDTH + ty)*width + col];
-        
         __syncthreads();
         
         for (int k = 0; k < TILE_WIDTH; ++k)
             res += sA[ty][k] * sB[k][tx];
-        
         __syncthreads();
     }
     
